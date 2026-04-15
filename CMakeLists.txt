@@ -14,13 +14,17 @@ find_package(fadfs_core REQUIRED)
 
 set(CMAKE_C_STANDARD 11)
 
-add_executable(fasdfs_cli main.c)
+add_executable(fadfs_cli main.c
+        src/repl.c
+        include/repl.h
+        src/test_cmd.c
+        include/cmd_def.h)
 
-target_link_libraries(fasdfs_cli PRIVATE
+target_link_libraries(fadfs_cli PRIVATE
         fadfs_core::fadfs_core
         xstdlib::xstdlib
 )
 
-install(TARGETS fasdfs_cli
+install(TARGETS fadfs_cli
         RUNTIME DESTINATION bin
 )
