@@ -8,7 +8,6 @@
 #include <fadfs_core/error.h>
 
 #include <stdio.h>
-#include <string.h>
 
 #include "../include/cmd_def.h"
 #include "../include/repl.h"
