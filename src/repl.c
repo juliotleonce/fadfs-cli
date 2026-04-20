@@ -2,81 +2,104 @@
 #include <xstdlib/xarray.h>
 #include <xstdlib/xstring.h>
 #include <xstdlib/xhashmap.h>
-#include "../include/repl.h"
+#include <xstdlib/xio_utils.h>
 
+#include <fadfs_core/api.h>
+#include <fadfs_core/error.h>
+
+#include <stdio.h>
 #include <string.h>
 
 #include "../include/cmd_def.h"
+#include "../include/repl.h"
 
-static XString *get_command_line();
+static int command_exec(ReplContext *ctx, const char *command_name,const XArray *cmd_args);
+static void add_command(const ReplContext *ctx, const char *name, ReplCommand command);
+static void mkfs_process(const char *filename);
+
+void repl_setup_cmd(const ReplContext *ctx) {
+    ctx->add_command(ctx, "test", &test_cmd_run);
+}
 
 void repl_run(ReplContext *ctx) {
-    bool running = true;
-    XHashMap *repl_commands = xhashmap_new(sizeof(ReplCommand));
-    xhashmap_put(repl_commands, "test", (ReplCommand []){ &test_cmd_run });
 
-    while (running) {
+    while (ctx->running) {
         XMEM_SCOPE {
-            const XString *command_line = get_command_line();
+            const XString *command_line = xio_read_console_line("fadfs > ");
             const XArray *command_line_split = xstring_split(command_line, " ");
-            const XString *command_name = xarray_at(command_line_split, 0);
+            const XString *command_name = xarray_at(command_line_split,0);
+            const XArray *cmd_args = xarray_slice(command_line_split, 1, command_line_split->length);
+
             if (xstring_equal_c_str(command_name, "exit")) {
-                fclose(ctx->fadisk_ptr);
-                running = false;
+                ctx->fadfs_unmount();
+                ctx->running = false;
             } else {
-                const ReplCommand *command = (ReplCommand *) xhashmap_get(repl_commands, command_name->c_str);
-                const XArray *cmd_args = xarray_slice(command_line_split, 1, command_line_split->length);
-                if (command) (*command)(ctx, cmd_args);
-                else printf("erreur: commande inconnue.\n");
+                ctx->exec(ctx, command_name->c_str, cmd_args);
             }
         }
+    }
+}
+
+void repl_before_run(const ReplContext *ctx) {
+    const XString *filename = xarray_at(ctx->cli_args, ctx->cli_args->length - 1);
+
+    if (ctx->cli_args->length == 1) {
+        printf("erreur: argument manquante.\n");
+        exit(1);
+    }
+
+    if (!xstring_contains(filename, ".fadisk")) {
+        printf("erreur: le fichier doit avoir l'extension .fadisk.\n");
+        exit(1);
+    }
+
+    while (ctx->fadfs_mount(filename->c_str) == -INVALID_FILE_SYSTEM) {
+        mkfs_process(filename->c_str);
     }
 }
 
 
 ReplContext *repl_init(const int argc, char **argv) {
     ReplContext *ctx = xmem_alloc(sizeof(ReplContext));
+    ctx->repl_commands = xhashmap_new(sizeof(ReplCommand));
+    ctx->cli_args = xarray_new(sizeof(XString));
+    ctx->fadfs_mount = &fadfs_mount;
+    ctx->fadfs_unmount = &fadfs_umount;
+    ctx->exec = &command_exec;
+    ctx->add_command = &add_command;
+    ctx->running = true;
 
-    XMEM_SCOPE {
-        char *last_arg = argv[argc - 1];
-
-        if (!last_arg || strcmp(last_arg, "-r") == 0) {
-            printf("erreur: argument manquante.\n");
-            exit(1);
-        }
-
-        const XString *filename = xstring_new(last_arg);
-
-        if (!xstring_contains(filename, ".fadisk")) {
-            printf("erreur: le fichier doit avoir l'extension .fadisk.\n");
-            exit(1);
-        }
-
-        ctx->fadisk_ptr = fopen(filename->c_str, "a+");
-    }
-
-    if (ctx->fadisk_ptr == NULL) {
-        printf("erreur: impossible d'ouvrir ou creer le fichier.\n");
-        exit(1);
-    }
+    for (int i = 0; i < argc; i++)
+        xarray_push(ctx->cli_args, xstring_new(argv[i]));
 
     return ctx;
 }
 
-XString *get_command_line() {
-    printf("fadfs > ");
-    fflush(stdout);
+int command_exec(ReplContext *ctx, const char *command_name,const XArray *cmd_args) {
+    const ReplCommand *command =
+        (ReplCommand *) xhashmap_get(ctx->repl_commands, command_name);
+    if (command) (*command)(ctx, cmd_args);
+    else printf("erreur: commande inconnue.\n");
+    return 0;
+}
 
-    char *line = NULL;
-    size_t len = 0;
-    ssize_t read;
+void add_command(const ReplContext *ctx, const char *name, const ReplCommand command) {
+    xhashmap_put(ctx->repl_commands, name, (ReplCommand[]){ command });
+}
 
-    if ((read = getline(&line, &len, stdin)) != -1) {
-        if (line[read - 1] == '\n') { line[read - 1] = '\0'; }
-        XString *command_line = xstring_new(line);
-        free(line);
-        return command_line;
+void mkfs_process(const char *filename) {
+    bool is_valid_input = false;
+    while (!is_valid_input) {
+        char *endptr;
+        const char *prompt = "Combien d'espace voulez-vous allouer? (en Mo) : ";
+        const XString *response = xio_read_console_line(prompt);
+        const long size = strtol(response->c_str, &endptr, 10);
+
+        if (endptr == response->c_str || *endptr != '\0') {
+            printf("erreur: valeur invalide.\n");
+        } else {
+            is_valid_input = true;
+            fadfs_mkfs(filename, size << 10 << 10);
+        }
     }
-
-    return NULL;
 }
