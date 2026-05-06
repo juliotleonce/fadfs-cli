@@ -11,7 +11,7 @@ typedef struct ReplContext ReplContext;
 typedef int (*FadFSMount) (const char *fadisk_path);
 typedef int (*FadFSUnMount) (void);
 typedef int (*CommandExecutor) (ReplContext *ctx, const char *command_name,const XArray *cmd_args);
-typedef void (*ReplCommand) (ReplContext *ctx, const XArray *cmd_args);
+typedef int (*ReplCommand) (ReplContext *ctx, const XArray *cmd_args);
 typedef void (*AddCommand) (const ReplContext *ctx, const char *name, ReplCommand command);
 
 typedef struct ReplContext {

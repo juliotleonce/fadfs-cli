@@ -18,6 +18,9 @@ static void mkfs_process(const char *filename);
 
 void repl_setup_cmd(const ReplContext *ctx) {
     ctx->add_command(ctx, "test", &test_cmd_run);
+    ctx->add_command(ctx, "ls", &ls_cmd_run);
+    ctx->add_command(ctx, "stat", &stat_cmd_run);
+    ctx->add_command(ctx, "sb", &sb_read_cmd_run);
 }
 
 void repl_run(ReplContext *ctx) {
@@ -52,8 +55,12 @@ void repl_before_run(const ReplContext *ctx) {
         exit(1);
     }
 
-    while (ctx->fadfs_mount(filename->c_str) == -INVALID_FILE_SYSTEM) {
+    const int mount_res = ctx->fadfs_mount(filename->c_str);
+    if (mount_res == -INVALID_FILE_SYSTEM) {
         mkfs_process(filename->c_str);
+        EXIT_ON_ERROR(ctx->fadfs_mount(filename->c_str));
+    } else {
+        EXIT_ON_ERROR(mount_res);
     }
 }
 
@@ -92,13 +99,16 @@ void mkfs_process(const char *filename) {
         char *endptr;
         const char *prompt = "Combien d'espace voulez-vous allouer? (en Mo) : ";
         const XString *response = xio_read_console_line(prompt);
-        const long size = strtol(response->c_str, &endptr, 10);
+        const unsigned long size = strtol(response->c_str, &endptr, 10);
 
         if (endptr == response->c_str || *endptr != '\0') {
             printf("erreur: valeur invalide.\n");
         } else {
-            is_valid_input = true;
-            fadfs_mkfs(filename, size << 10 << 10);
+            const unsigned long size_in_bytes = size << 20;
+            const int mkfs_res = fadfs_mkfs(filename, size_in_bytes);
+            if (mkfs_res != NO_ERROR)
+                printf("errno: %d\n", mkfs_res);
+            else is_valid_input = true;
         }
     }
 }

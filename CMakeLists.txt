@@ -17,7 +17,7 @@ set(CMAKE_C_STANDARD 11)
 add_executable(fadfs_cli main.c
         src/repl.c
         include/repl.h
-        src/test_cmd.c
+        src/repl_cmd.c
         include/cmd_def.h)
 
 target_link_libraries(fadfs_cli PRIVATE
